@@ -1,0 +1,21 @@
+{
+    "contributors": [
+        "haxeui",
+        "ianharrigan"
+    ],
+    "version": "1.2.3",
+    "dependencies": {
+        "haxeui-core": "",
+        "heaps": ""
+    },
+    "releasenote": "Tweaks and fixes",
+    "tags": [
+        "ui",
+        "gui",
+        "heaps"
+    ],
+    "license": "MIT",
+    "name": "haxeui-heaps",
+    "description": "The Heaps backend of the HaxeUI framework",
+    "url": "https://github.com/haxeui/haxeui-heaps"
+}

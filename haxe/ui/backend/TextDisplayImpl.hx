@@ -1,14 +1,13 @@
 package haxe.ui.backend;
 
-import haxe.ui.assets.FontInfo;
-import haxe.ui.backend.heaps.util.FontDetect;
-import haxe.ui.core.Component;
-import haxe.ui.core.TextDisplay.TextDisplayData;
-import haxe.ui.styles.Style;
-
 class TextDisplayImpl extends TextBase {
     public var sprite:h2d.Text;
 
+    // defaults
+    public static var channel:h2d.Font.SDFChannel = 0;
+    public static var alphaCutoff:Float = 0.5;
+    public static var smoothing:Float = 1 / 2;
+    
     public function new() {
         super();
         sprite = createText();
@@ -27,19 +26,22 @@ class TextDisplayImpl extends TextBase {
                 sprite.textAlign = textAlign;
             }
 
-            var fontSizeValue = Std.int(_textStyle.fontSize);
-            if ((_fontInfo != null && sprite.font.name != _fontInfo.data)
-                || sprite.font.size != fontSizeValue) {
-                var fontName:String = _fontInfo != null ? _fontInfo.data : sprite.font.name;
-                sprite.font = hxd.res.FontBuilder.getFont(FontDetect.getFontName(fontName), fontSizeValue > 0 ? fontSizeValue : Toolkit.pixelsPerRem);
-                measureTextRequired = true;
+            if (_fontInfo != null && _fontInfo.data != null) {
+                var fontSizeValue = Std.int(_textStyle.fontSize);
+                if (fontSizeValue <= 0) {
+                    fontSizeValue = Toolkit.pixelsPerRem;
+                    fontSizeValue = _fontInfo.data.toFont().size;
+                }
+                var font = _fontInfo.data.toSdfFont(fontSizeValue, TextDisplayImpl.channel, TextDisplayImpl.alphaCutoff, TextDisplayImpl.smoothing);
+                if (sprite.font != font) {
+                    sprite.font = font;
+                    measureTextRequired = true;
+                }
             }
-
+            
             if (sprite.textColor != _textStyle.color) {
                 sprite.textColor = _textStyle.color;
             }
-
-            //TODO - wordWrap - multiline
         }
 
         return measureTextRequired;
@@ -57,6 +59,16 @@ class TextDisplayImpl extends TextBase {
     private override function measureText() {
         _textWidth = sprite.textWidth;
         _textHeight = sprite.textHeight;
+        
+        _textWidth = Math.round(_textWidth + 2);
+        _textHeight = Math.round(_textHeight);
+        
+        if (_textWidth % 2 == 0) {
+            _textWidth++;
+        }
+        if (_textHeight % 2 == 0) {
+            _textHeight++;
+        }
     }
 
     private function createText():h2d.Text {

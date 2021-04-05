@@ -1,183 +1,163 @@
 package haxe.ui.backend;
 
-import haxe.ui.backend.heaps.HeapsApp;
+import h2d.Object;
+import h2d.Scene;
 import haxe.ui.backend.heaps.EventMapper;
-import haxe.ui.containers.dialogs.Dialog2 in Dialog;
-import haxe.ui.containers.dialogs.DialogButton;
+import haxe.ui.backend.heaps.MouseHelper;
 import haxe.ui.core.Component;
-import haxe.ui.events.KeyboardEvent;
 import haxe.ui.events.MouseEvent;
 import haxe.ui.events.UIEvent;
-import hxd.Event.EventKind;
+import hxd.Window;
 
-@:access(h2d.Layers)
-class ScreenImpl extends ScreenBase2 {
+class ScreenImpl extends ScreenBase {
     private var _mapping:Map<String, UIEvent->Void>;
 
     public function new() {
         _mapping = new Map<String, UIEvent->Void>();
     }
-
-    public var app(get, null):HeapsApp;
-    private function get_app():HeapsApp {
-        if (app == null) {
-            if (options == null || options.app == null) {
-                app = new HeapsApp();
-            } else {
-                app = options.app;
-            }
+    
+    private var _root:Object = null;
+    public var root(get, set):Object;
+    private function get_root():Object {
+        if (_root != null) {
+            return _root;
         }
-
-        return app;
+        
+        if (options == null) {
+            return null;
+        }
+        
+        return options.root;
     }
-
-    public function init() {
-        var s2d:h2d.Scene = app.s2d;
-        if (!Lambda.empty(_mapping)) {
-            s2d.addEventListener(__onEvent);
-            _mainEventAdded = true;
-        }
-    }
-
-    private override function set_focus(value:Component):Component {
-        if (value != null) {
-            if (value.hasTextInput()) {
-                value.getTextInput().focus();
-            } else {
-                value.setFocus();
-            }
-        }
-
+    private function set_root(value:Object):Object {
+        _root = value;
         return value;
     }
-
+    
+    private override function set_options(value:ToolkitOptions):ToolkitOptions {
+        super.set_options(value);
+        if (value.manualUpdate == null || value.manualUpdate == false) {
+            MainLoop.add(BackendImpl.update);
+        }
+        return value;
+    }
+    
     private override function get_width():Float {
-        return app.s2d.width;
+        return Window.getInstance().width;
     }
 
     private override function get_height():Float {
-        return app.s2d.height;
+        return Window.getInstance().height;
     }
 
     private override function get_dpi():Float {
         return hxd.System.screenDPI;
     }
-
-    public override function addComponent(component:Component) {
-        app.s2d.addChildAt(component, 0);//TODO
+    
+    public override function addComponent(component:Component):Component {
+        _topLevelComponents.push(component);
+        if (_removedComponents.indexOf(component) != -1) {
+            if (root == null) {
+                trace("WARNING: trying to add a component to a null root. Either set Screen.instance.root or specify one in Toolkit.init");
+                return component;
+            }
+            _removedComponents.remove(component);
+            //rootScene.addChildAt(component, 0);
+            component.visible = true;
+        } else {
+            if (root == null) {
+                trace("WARNING: trying to add a component to a null root. Either set Screen.instance.root or specify one in Toolkit.init");
+                return component;
+            }
+            root.addChildAt(component, 0);
+        }
+        resizeComponent(component);
+        return component;
     }
 
-    public override function removeComponent(component:Component) {
-        app.s2d.removeChild(component);
+    private var _removedComponents:Array<Component> = []; // TODO: probably ill conceived
+    public override function removeComponent(component:Component):Component {
+        _topLevelComponents.remove(component);
+        if (_removedComponents.indexOf(component) == -1) {
+            if (root == null) {
+                trace("WARNING: trying to remove a component to a null root. Either set Screen.instance.root or specify one in Toolkit.init");
+                return component;
+            }
+            //rootScene.removeChild(component);
+            _removedComponents.push(component);
+            component.visible = false;
+        }
+        return component;
     }
 
-    private override function handleSetComponentIndex(child:Component, index:Int) {
-        app.s2d.addChildAt(child, index);
+    private override function handleSetComponentIndex(component:Component, index:Int) {
+        if (root == null) {
+            trace("WARNING: trying to set a component index in a null root. Either set Screen.instance.root or specify one in Toolkit.init");
+            return;
+        }
+        root.addChildAt(component, index);
+        resizeComponent(component);
     }
-
+    
     //***********************************************************************************************************
     // Events
     //***********************************************************************************************************
-    private var _mouseDownButton : Int = -1;
-    private var _mainEventAdded:Bool;
-
     private override function supportsEvent(type:String):Bool {
         return EventMapper.HAXEUI_TO_HEAPS.get(type) != null;
     }
 
     private override function mapEvent(type:String, listener:UIEvent->Void) {
         switch (type) {
-            case MouseEvent.MOUSE_MOVE | MouseEvent.MOUSE_OVER | MouseEvent.MOUSE_OUT
-                | MouseEvent.MOUSE_DOWN | MouseEvent.MOUSE_UP | MouseEvent.CLICK
-                | KeyboardEvent.KEY_DOWN | KeyboardEvent.KEY_UP:
+            case MouseEvent.MOUSE_MOVE:
                 if (_mapping.exists(type) == false) {
                     _mapping.set(type, listener);
-                    var s2d:h2d.Scene = app.s2d;
-                    if (s2d != null && !_mainEventAdded) {
-                        s2d.addEventListener(__onEvent);
-                        _mainEventAdded = true;
-                    }
+                    MouseHelper.notify(MouseEvent.MOUSE_MOVE, __onMouseMove);
+                }
+                
+            case MouseEvent.MOUSE_DOWN:
+                if (_mapping.exists(type) == false) {
+                    _mapping.set(type, listener);
+                    MouseHelper.notify(MouseEvent.MOUSE_DOWN, __onMouseDown);
+                }
+                
+            case MouseEvent.MOUSE_UP:
+                if (_mapping.exists(type) == false) {
+                    _mapping.set(type, listener);
+                    MouseHelper.notify(MouseEvent.MOUSE_UP, __onMouseUp);
                 }
         }
     }
-
-    private override function unmapEvent(type:String, listener:UIEvent->Void) {
-        switch (type) {
-            case MouseEvent.MOUSE_MOVE | MouseEvent.MOUSE_OVER | MouseEvent.MOUSE_OUT
-                | MouseEvent.MOUSE_DOWN | MouseEvent.MOUSE_UP | MouseEvent.CLICK
-                | KeyboardEvent.KEY_DOWN | KeyboardEvent.KEY_UP:
-                _mapping.remove(type);
-                var s2d:h2d.Scene = app.s2d;
-                if (s2d != null && Lambda.empty(_mapping)) {
-                    s2d.removeEventListener(__onEvent);
-                    _mainEventAdded = false;
-                }
-        }
-    }
-
-    private function __onEvent(event:hxd.Event) {
-        var type:String = switch (event.kind) {
-            case EMove:
-                MouseEvent.MOUSE_MOVE;
-            case EPush:
-                if (event.button == 0) {
-                    _mouseDownButton = event.button;
-                    MouseEvent.MOUSE_DOWN;
-                } else {
-                    null;
-                }
-            case ERelease | EReleaseOutside:
-                var tmp = _mouseDownButton;
-                _mouseDownButton = -1;
-                if (event.button == 0) {
-                    if (tmp == event.button) {
-                        __dispatchEventType(MouseEvent.MOUSE_UP, event);
-                        MouseEvent.CLICK;
-                    } else {
-                        null;
-                    }
-                } else {
-                    null;
-                }
-            case EOver:
-                MouseEvent.MOUSE_OVER;
-            case EOut:
-                _mouseDownButton = -1;
-                MouseEvent.MOUSE_OUT;
-            case EWheel:
-                MouseEvent.MOUSE_WHEEL;
-            case EKeyUp:
-                KeyboardEvent.KEY_UP;
-            case EKeyDown:
-                KeyboardEvent.KEY_DOWN;
-            default:
-                null;
-        }
-
-        if (type != null) {
-            __dispatchEventType(type, event);
-        }
-    }
-
-    private function __dispatchEventType(type:String, originalEvent:hxd.Event) {
-        var fn = _mapping.get(type);
+    
+    private function __onMouseMove(event:MouseEvent) {
+        var fn = _mapping.get(MouseEvent.MOUSE_MOVE);
         if (fn != null) {
-            if (type == KeyboardEvent.KEY_DOWN || type == KeyboardEvent.KEY_UP) {
-                var keyboardEvent = new KeyboardEvent(type);
-                keyboardEvent._originalEvent = originalEvent;
-                keyboardEvent.keyCode = originalEvent.keyCode;
-                keyboardEvent.shiftKey = hxd.Key.isDown(hxd.Key.SHIFT);
-                fn(keyboardEvent);
-            } else {
-                var mouseEvent = new MouseEvent(type);
-                mouseEvent._originalEvent = originalEvent;
-                var s2d:h2d.Scene = app.s2d;
-                mouseEvent.screenX = s2d.mouseX / Toolkit.scaleX;//event.relX / Toolkit.scaleX;
-                mouseEvent.screenY = s2d.mouseY / Toolkit.scaleY;//event.relY / Toolkit.scaleY;
-                mouseEvent.buttonDown = false; //event.button;  //TODO
-                mouseEvent.delta = originalEvent.wheelDelta;
-                fn(mouseEvent);
-            }
+            var mouseEvent = new MouseEvent(MouseEvent.MOUSE_MOVE);
+            mouseEvent.screenX = event.screenX;
+            mouseEvent.screenY = event.screenY;
+            mouseEvent.buttonDown = event.data;
+            fn(mouseEvent);
+        }
+    }
+    
+    private function __onMouseDown(event:MouseEvent) {
+        var fn = _mapping.get(MouseEvent.MOUSE_DOWN);
+        if (fn != null) {
+            var mouseEvent = new MouseEvent(MouseEvent.MOUSE_DOWN);
+            mouseEvent.screenX = event.screenX;
+            mouseEvent.screenY = event.screenY;
+            mouseEvent.buttonDown = event.data;
+            fn(mouseEvent);
+        }
+    }
+    
+    private function __onMouseUp(event:MouseEvent) {
+        var fn = _mapping.get(MouseEvent.MOUSE_UP);
+        if (fn != null) {
+            var mouseEvent = new MouseEvent(MouseEvent.MOUSE_UP);
+            mouseEvent.screenX = event.screenX;
+            mouseEvent.screenY = event.screenY;
+            mouseEvent.buttonDown = event.data;
+            fn(mouseEvent);
         }
     }
 }
