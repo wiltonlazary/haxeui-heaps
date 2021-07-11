@@ -1,7 +1,6 @@
 package haxe.ui.backend;
 
 import h2d.Object;
-import h2d.Scene;
 import haxe.ui.backend.heaps.EventMapper;
 import haxe.ui.backend.heaps.MouseHelper;
 import haxe.ui.core.Component;
@@ -14,6 +13,21 @@ class ScreenImpl extends ScreenBase {
 
     public function new() {
         _mapping = new Map<String, UIEvent->Void>();
+        addResizeListener();
+    }
+    
+    private var _resizeListenerAdded:Bool = false;
+    private function addResizeListener() {
+        if (_resizeListenerAdded == true) {
+            return;
+        }
+        
+        _resizeListenerAdded = true;
+        Window.getInstance().addResizeEvent(onWindowResize);
+    }
+    
+    private function onWindowResize() {
+        resizeRootComponents();
     }
     
     private var _root:Object = null;
@@ -55,7 +69,7 @@ class ScreenImpl extends ScreenBase {
     }
     
     public override function addComponent(component:Component):Component {
-        _topLevelComponents.push(component);
+        rootComponents.push(component);
         if (_removedComponents.indexOf(component) != -1) {
             if (root == null) {
                 trace("WARNING: trying to add a component to a null root. Either set Screen.instance.root or specify one in Toolkit.init");
@@ -77,7 +91,7 @@ class ScreenImpl extends ScreenBase {
 
     private var _removedComponents:Array<Component> = []; // TODO: probably ill conceived
     public override function removeComponent(component:Component):Component {
-        _topLevelComponents.remove(component);
+        rootComponents.remove(component);
         if (_removedComponents.indexOf(component) == -1) {
             if (root == null) {
                 trace("WARNING: trying to remove a component to a null root. Either set Screen.instance.root or specify one in Toolkit.init");
